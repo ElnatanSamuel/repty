@@ -12,7 +12,7 @@ echo "Cloning repo $REPO_URL into $INSTALL_DIR"
 pwd
 
 
-git clone "$REPO_URL" "$INSTALL_DIR" || {
+git clone --branch dev-el "$REPO_URL" "$INSTALL_DIR" || {
   echo "Failed to clone repo"; exit 1;
 }
 
