@@ -13,8 +13,8 @@ git clone "$REPO_URL" "$INSTALL_DIR" || {
 }
 
 chmod +x "$BIN_DIR/repty"
-chmod +x "$BIN_DIR/export-md.sh"
-chmod +x "$BIN_DIR/stats.sh"
+chmod +x "$INSTALL_DIR/lib/export.sh"
+chmod +x "$INSTALL_DIR/lib/stats.sh"
 
 if [[ $SHELL == */zsh ]]; then
   echo 'Adding Repty to .zshrc...'
