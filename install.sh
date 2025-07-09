@@ -8,9 +8,18 @@ echo "Getting Repty..."
 
 rm -rf "$INSTALL_DIR"
 
+echo "Cloning repo $REPO_URL into $INSTALL_DIR"
+pwd
+
+
 git clone "$REPO_URL" "$INSTALL_DIR" || {
   echo "Failed to clone repo"; exit 1;
 }
+
+if [[ ! -f "$BIN_DIR/repty" ]]; then
+  echo "Error: $BIN_DIR/repty not found after cloning."
+  exit 1
+fi
 
 chmod +x "$BIN_DIR/repty"
 chmod +x "$INSTALL_DIR/lib/export.sh"
