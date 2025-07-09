@@ -22,11 +22,12 @@ fi
 
 chmod +x "$BIN_DIR/repty"
 chmod +x "$INSTALL_DIR/lib/export.sh"
-chmod +x "$INSTALL_DIR/lib/fuzzy_search.sh"
 chmod +x "$INSTALL_DIR/lib/stats.sh"
 chmod +x "$INSTALL_DIR/lib/bootstrap.sh"
+chmod +x "$INSTALL_DIR/lib/fuzzy_search.sh"
 chmod +x "$INSTALL_DIR/lib/"*.sh
 
+# Initialize the database
 echo "Initializing database..."
 bash "$INSTALL_DIR/lib/bootstrap.sh"
 
@@ -34,15 +35,23 @@ if [[ $SHELL == */zsh ]]; then
   echo 'Adding Repty to .zshrc...'
   {
     echo ''
-    echo 'repty_log() { "$HOME/.repty/bin/repty" log "$?" ; }'
-    echo 'precmd() { repty_log }'
+    echo 'repty_log() {'
+    echo '  local EXIT_CODE=$?'
+    echo '  local CMD=$(fc -ln -1 | sed "s/^\s*//")'
+    echo '  "$HOME/.repty/bin/repty" log "$EXIT_CODE" "$CMD"'
+    echo '}'
+    echo 'precmd_functions+=(repty_log)'
   } >> "$HOME/.zshrc"
   SHELL_RC="$HOME/.zshrc"
 elif [[ $SHELL == */bash ]]; then
   echo 'Adding Repty to .bashrc...'
   {
     echo ''
-    echo 'repty_log() { "$HOME/.repty/bin/repty" log "$?" ; }'
+    echo 'repty_log() {'
+    echo '  local EXIT_CODE=$?'
+    echo '  local CMD=$(HISTTIMEFORMAT="" history 1 | sed "s/^[ 0-9]\+[ ]\+//")'
+    echo '  "$HOME/.repty/bin/repty" log "$EXIT_CODE" "$CMD"'
+    echo '}'
     echo 'PROMPT_COMMAND="repty_log"'
   } >> "$HOME/.bashrc"
   SHELL_RC="$HOME/.bashrc"
@@ -51,6 +60,7 @@ else
   SHELL_RC=""
 fi
 
+# Add repty bin directory to PATH if not already added
 if [[ -n "$SHELL_RC" ]]; then
   if ! grep -q 'export PATH="$HOME/.repty/bin:$PATH"' "$SHELL_RC"; then
     echo 'export PATH="$HOME/.repty/bin:$PATH"' >> "$SHELL_RC"
