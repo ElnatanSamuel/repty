@@ -209,69 +209,26 @@ EOF
     fi
     ;;
     
-  *)
-    KEYWORDS=$(echo "$QUERY" | tr '[:upper:]' '[:lower:]' | sed -E 's/\b(the|a|an|in|on|at|to|for|with|by|about|like|show|find|get|give|me|my|i|command[s]?|ran|run|executed|used|typed|entered|from|that|which|what|where|when|how|who|why|did|do|does|is|are|was|were|be|been|being|have|has|had|having|can|could|shall|should|will|would|may|might|must|need|ought|use[d]?|using|let[']?s)\b//g' | tr -s '[:space:]' | sed 's/^ //g' | sed 's/ $//g')
+  "--install-advanced")
+    echo "Installing advanced NLP capabilities..."
     
-    if [ -z "$KEYWORDS" ]; then
-      echo "Could not extract meaningful keywords from your query."
-      echo "Try being more specific or use one of the example queries."
+    if ! command -v python3 &>/dev/null; then
+      echo "Error: Python 3 is required but not installed."
       exit 1
     fi
     
-    echo "Searching for: $KEYWORDS"
+    VENV_DIR="$REPTY_EXT_DIR/venv"
+    if [ ! -d "$VENV_DIR" ]; then
+      echo "Creating Python virtual environment..."
+      python3 -m venv "$VENV_DIR"
+    fi
     
-    SQL_QUERY="SELECT datetime(timestamp) AS \"Timestamp\", cwd AS \"Directory\", command AS \"Command\", exit_code AS \"Exit Code\" FROM commands WHERE "
+    echo "Installing required Python packages..."
+    source "$VENV_DIR/bin/activate"
+    pip install --quiet sentence-transformers sqlite-utils
     
-    for KEYWORD in $KEYWORDS; do
-      SQL_QUERY="$SQL_QUERY command LIKE '%$KEYWORD%' OR "
-    done
-    
-    SQL_QUERY="${SQL_QUERY% OR *} ORDER BY timestamp DESC LIMIT 20;"
-    
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "$SQL_QUERY"
-    ;;
-esac
-
-if [ $? -ne 0 ]; then
-  echo "No results found or database error."
-fi
-
-if [ ! -f "$REPTY_EXT_DIR/.nlp_notice_shown" ]; then
-  echo ""
-  echo "----------------------------------------"
-  echo "💡 Want more advanced NLP capabilities?"
-  echo ""
-  echo "You can install a lightweight embedding model for better natural language understanding:"
-  echo ""
-  echo "  repty nlp --install-advanced"
-  echo ""
-  echo "This will download a small (~25MB) model for improved query understanding."
-  echo "All processing remains local and offline."
-  echo "----------------------------------------"
-  
-  touch "$REPTY_EXT_DIR/.nlp_notice_shown"
-fi
-
-if [ "$QUERY" = "--install-advanced" ]; then
-  echo "Installing advanced NLP capabilities..."
-  
-  if ! command -v python3 &>/dev/null; then
-    echo "Error: Python 3 is required but not installed."
-    exit 1
-  fi
-  
-  VENV_DIR="$REPTY_EXT_DIR/venv"
-  if [ ! -d "$VENV_DIR" ]; then
-    echo "Creating Python virtual environment..."
-    python3 -m venv "$VENV_DIR"
-  fi
-  
-  echo "Installing required Python packages..."
-  source "$VENV_DIR/bin/activate"
-  pip install --quiet sentence-transformers sqlite-utils
-  
-  EMBED_SCRIPT="$REPTY_EXT_DIR/generate_embeddings.py"
-  cat > "$EMBED_SCRIPT" <<'PYTHON'
+    EMBED_SCRIPT="$REPTY_EXT_DIR/generate_embeddings.py"
+    cat > "$EMBED_SCRIPT" << 'PYTHONSCRIPT'
 import sys
 import sqlite3
 from sentence_transformers import SentenceTransformer
@@ -335,10 +292,10 @@ conn.create_function('cosine_similarity', 2, lambda x, y:
 
 print("Embeddings generated and stored in database")
 conn.close()
-PYTHON
+PYTHONSCRIPT
 
-  SEARCH_SCRIPT="$REPTY_EXT_DIR/semantic_search.py"
-  cat > "$SEARCH_SCRIPT" <<'PYTHON'
+    SEARCH_SCRIPT="$REPTY_EXT_DIR/semantic_search.py"
+    cat > "$SEARCH_SCRIPT" << 'PYTHONSCRIPT'
 import sys
 import sqlite3
 from sentence_transformers import SentenceTransformer
@@ -384,13 +341,13 @@ for result in results:
     print(f"{cmd_id}|{timestamp}|{cwd}|{cmd}|{exit_code}|{similarity:.4f}")
 
 conn.close()
-PYTHON
+PYTHONSCRIPT
 
-  echo "Generating embeddings for existing commands..."
-  python3 "$EMBED_SCRIPT" "$DB"
-  
-  WRAPPER_SCRIPT="$REPTY_EXT_DIR/semantic_search.sh"
-  cat > "$WRAPPER_SCRIPT" <<EOF
+    echo "Generating embeddings for existing commands..."
+    python3 "$EMBED_SCRIPT" "$DB"
+    
+    WRAPPER_SCRIPT="$REPTY_EXT_DIR/semantic_search.sh"
+    cat > "$WRAPPER_SCRIPT" << EOF
 #!/bin/bash
 
 DB="\$HOME/.repty.db"
@@ -406,14 +363,57 @@ python3 "$SEARCH_SCRIPT" "\$DB" "\$QUERY" | while IFS='|' read -r id timestamp c
 done
 EOF
 
-  chmod +x "$WRAPPER_SCRIPT"
-  
+    chmod +x "$WRAPPER_SCRIPT"
+    
+    echo ""
+    echo "Advanced NLP capabilities installed!"
+    echo "You can now use more natural language queries with repty nlp."
+    echo "Example: repty nlp \"show me git commands that failed recently\""
+    
+    exit 0
+    ;;
+    
+  *)
+    KEYWORDS=$(echo "$QUERY" | tr '[:upper:]' '[:lower:]' | sed -E 's/\b(the|a|an|in|on|at|to|for|with|by|about|like|show|find|get|give|me|my|i|command[s]?|ran|run|executed|used|typed|entered|from|that|which|what|where|when|how|who|why|did|do|does|is|are|was|were|be|been|being|have|has|had|having|can|could|shall|should|will|would|may|might|must|need|ought|use[d]?|using|let[']?s)\b//g' | tr -s '[:space:]' | sed 's/^ //g' | sed 's/ $//g')
+    
+    if [ -z "$KEYWORDS" ]; then
+      echo "Could not extract meaningful keywords from your query."
+      echo "Try being more specific or use one of the example queries."
+      exit 1
+    fi
+    
+    echo "Searching for: $KEYWORDS"
+    
+    SQL_QUERY="SELECT datetime(timestamp) AS \"Timestamp\", cwd AS \"Directory\", command AS \"Command\", exit_code AS \"Exit Code\" FROM commands WHERE "
+    
+    for KEYWORD in $KEYWORDS; do
+      SQL_QUERY="$SQL_QUERY command LIKE '%$KEYWORD%' OR "
+    done
+    
+    SQL_QUERY="${SQL_QUERY% OR *} ORDER BY timestamp DESC LIMIT 20;"
+    
+    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "$SQL_QUERY"
+    ;;
+esac
+
+if [ $? -ne 0 ]; then
+  echo "No results found or database error."
+fi
+
+if [ ! -f "$REPTY_EXT_DIR/.nlp_notice_shown" ]; then
   echo ""
-  echo "Advanced NLP capabilities installed!"
-  echo "You can now use more natural language queries with repty nlp."
-  echo "Example: repty nlp \"show me git commands that failed recently\""
+  echo "----------------------------------------"
+  echo "💡 Want more advanced NLP capabilities?"
+  echo ""
+  echo "You can install a lightweight embedding model for better natural language understanding:"
+  echo ""
+  echo "  repty nlp --install-advanced"
+  echo ""
+  echo "This will download a small (~25MB) model for improved query understanding."
+  echo "All processing remains local and offline."
+  echo "----------------------------------------"
   
-  exit 0
+  touch "$REPTY_EXT_DIR/.nlp_notice_shown"
 fi
 
 if [ -f "$REPTY_EXT_DIR/semantic_search.sh" ] && [ $? -ne 0 ]; then
