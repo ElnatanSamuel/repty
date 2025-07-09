@@ -1,6 +1,6 @@
 #!/bin/bash
 
-REPO_URL="git@github.com:ElnatanSamuel/repty.git"
+REPO_URL="https://github.com/ElnatanSamuel/repty.git"
 INSTALL_DIR="$HOME/.repty"
 BIN_DIR="$INSTALL_DIR/bin"
 
