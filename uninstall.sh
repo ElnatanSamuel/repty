@@ -9,6 +9,7 @@ rm -f "$HOME/.repty.db"
 if [ -f "$HOME/.zshrc" ]; then
   echo "Cleaning up .zshrc..."
   sed -i '/repty_log()/,/^}/d' "$HOME/.zshrc"
+  sed -i '/precmd_functions+=(repty_log)/d' "$HOME/.zshrc"
   sed -i '/precmd() { repty_log }/d' "$HOME/.zshrc"
   sed -i '/export PATH="$HOME\/.repty\/bin:$PATH"/d' "$HOME/.zshrc"
 fi
