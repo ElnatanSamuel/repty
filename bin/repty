@@ -1,0 +1,20 @@
+#!/bin/bash
+
+BASE="$(dirname "$(realpath "$0")")/.."
+source "$BASE/lib/bootstrap.sh"
+
+case "$1" in
+  find)
+    shift
+    "$BASE/lib/fuzzy_search.sh" "$@"
+    ;;
+  stats)
+    "$BASE/lib/stats.sh"
+    ;;
+  export)
+    "$BASE/lib/export.sh"
+    ;;
+  *)
+    echo "Usage: repty [find <query> | stats | export]"
+    ;;
+esac
