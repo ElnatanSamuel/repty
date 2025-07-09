@@ -23,6 +23,8 @@ fi
 chmod +x "$BIN_DIR/repty"
 chmod +x "$INSTALL_DIR/lib/export.sh"
 chmod +x "$INSTALL_DIR/lib/stats.sh"
+chmod +x "$INSTALL_DIR/bin/repty"
+chmod +x "$INSTALL_DIR/lib/"*.sh
 
 if [[ $SHELL == */zsh ]]; then
   echo 'Adding Repty to .zshrc...'
