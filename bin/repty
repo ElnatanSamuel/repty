@@ -14,43 +14,39 @@ case "$SUBCOMMAND" in
   export)
     "$REPTY_LIB_DIR/export.sh" "$@"
     ;;
+  nlp)
+    "$REPTY_LIB_DIR/nlp_search.sh" "$@"
+    ;;
   log)
-    # Log the last command's exit code
     EXIT_CODE="$1"
     COMMAND="$2"
     
-    # Skip logging the repty command itself
     if [[ "$COMMAND" == repty* || -z "$COMMAND" ]]; then
       exit 0
     fi
     
-    # Get current directory and timestamp
     CWD=$(pwd)
     TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
     
-    # Try to get git project info
     GIT_PROJECT=""
     if command -v git &>/dev/null && git rev-parse --is-inside-work-tree &>/dev/null; then
       GIT_PROJECT=$(git config --get remote.origin.url 2>/dev/null || echo "")
     fi
     
-    # Generate session ID if not exists
     SESSION_ID=${REPTY_SESSION_ID:-$(uuidgen 2>/dev/null || echo "session-$(date +%s)")}
     export REPTY_SESSION_ID="$SESSION_ID"
     
-    # Escape single quotes in values for SQL
     COMMAND_ESC="${COMMAND//\'/\'\'}"
     CWD_ESC="${CWD//\'/\'\'}"
     GIT_PROJECT_ESC="${GIT_PROJECT//\'/\'\'}"
     
-    # Log to database
     sqlite3 "$HOME/.repty.db" <<EOF
 INSERT INTO commands (command, timestamp, cwd, exit_code, git_project, session_id) 
 VALUES ('$COMMAND_ESC', '$TIMESTAMP', '$CWD_ESC', $EXIT_CODE, '$GIT_PROJECT_ESC', '$SESSION_ID');
 EOF
     ;;
   *)
-    echo "Usage: repty [find <query> | stats | export | log <exit_code> <command>]"
+    echo "Usage: repty [find <query> | stats | export | nlp <query> | log <exit_code> <command>]"
     exit 1
     ;;
 esac
