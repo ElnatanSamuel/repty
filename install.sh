@@ -22,9 +22,13 @@ fi
 
 chmod +x "$BIN_DIR/repty"
 chmod +x "$INSTALL_DIR/lib/export.sh"
+chmod +x "$INSTALL_DIR/lib/fuzzy_search.sh"
 chmod +x "$INSTALL_DIR/lib/stats.sh"
-chmod +x "$INSTALL_DIR/bin/repty"
+chmod +x "$INSTALL_DIR/lib/bootstrap.sh"
 chmod +x "$INSTALL_DIR/lib/"*.sh
+
+echo "Initializing database..."
+bash "$INSTALL_DIR/lib/bootstrap.sh"
 
 if [[ $SHELL == */zsh ]]; then
   echo 'Adding Repty to .zshrc...'
@@ -47,7 +51,6 @@ else
   SHELL_RC=""
 fi
 
-# Add repty bin directory to PATH if not already added
 if [[ -n "$SHELL_RC" ]]; then
   if ! grep -q 'export PATH="$HOME/.repty/bin:$PATH"' "$SHELL_RC"; then
     echo 'export PATH="$HOME/.repty/bin:$PATH"' >> "$SHELL_RC"
