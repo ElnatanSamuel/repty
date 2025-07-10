@@ -3,6 +3,10 @@ import os
 import sqlite3
 import numpy as np
 
+# Force CPU-only mode for torch to avoid CUDA issues
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+os.environ["NO_CUDA"] = "1"
+
 try:
     from sentence_transformers import SentenceTransformer
 except ImportError:
@@ -26,14 +30,14 @@ try:
     conn = sqlite3.connect(db_path)
     cursor = conn.cursor()
 except Exception as e:
-    print(f"Error connecting to database: {e}")
+    print(f"Error connecting to database: {e}", file=sys.stderr)
     sys.exit(1)
 
 # Load model - use a smaller model for faster inference
 try:
-    model = SentenceTransformer('all-MiniLM-L6-v2')
+    model = SentenceTransformer('all-MiniLM-L6-v2', device="cpu")
 except Exception as e:
-    print(f"Error loading model: {e}")
+    print(f"Error loading model: {e}", file=sys.stderr)
     sys.exit(1)
 
 # Generate embedding for query
@@ -71,11 +75,30 @@ for term in query_terms:
     if term in important_terms:
         key_terms.append(term)
 
-# Try semantic search
 try:
+    print(f"DEBUG: Searching with query: {query}", file=sys.stderr)
+    print(f"DEBUG: Key terms: {key_terms}", file=sys.stderr)
+    
+    # Check if command_embeddings table exists
+    cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='command_embeddings'")
+    if not cursor.fetchone():
+        print("ERROR: command_embeddings table does not exist", file=sys.stderr)
+        sys.exit(1)
+        
+    # Check if keywords column exists in commands table
+    cursor.execute("PRAGMA table_info(commands)")
+    columns = [col[1] for col in cursor.fetchall()]
+    if 'keywords' not in columns:
+        print("WARNING: keywords column does not exist in commands table", file=sys.stderr)
+    
+    # Count available embeddings
+    cursor.execute("SELECT COUNT(*) FROM command_embeddings")
+    count = cursor.fetchone()[0]
+    print(f"DEBUG: Found {count} command embeddings", file=sys.stderr)
+    
     # Build a query that balances semantic similarity with keyword matching
     base_query = '''
-    SELECT c.id, c.command, c.timestamp, c.cwd, c.exit_code, c.keywords,
+    SELECT c.id, c.command, c.timestamp, c.cwd, c.exit_code, 
            cosine_similarity(e.embedding, ?) as similarity
     FROM commands c
     JOIN command_embeddings e ON c.id = e.command_id
@@ -87,12 +110,13 @@ try:
         keyword_conditions = []
         for term in key_terms:
             keyword_conditions.append(f"lower(c.command) LIKE '%{term}%'")
-            keyword_conditions.append(f"lower(c.keywords) LIKE '%{term}%'")
+            if 'keywords' in columns:  # Only add if keywords column exists
+                keyword_conditions.append(f"lower(c.keywords) LIKE '%{term}%'")
         
         # Use the key terms to boost relevant results
         keyword_clause = " OR ".join(keyword_conditions)
         cursor.execute(f'''
-        SELECT c.id, c.command, c.timestamp, c.cwd, c.exit_code, c.keywords,
+        SELECT c.id, c.command, c.timestamp, c.cwd, c.exit_code,
                CASE 
                  WHEN ({keyword_clause}) THEN cosine_similarity(e.embedding, ?) * 2.0
                  ELSE cosine_similarity(e.embedding, ?)
@@ -118,6 +142,7 @@ try:
     
     # If no results, try a more relaxed search
     if not results:
+        print("DEBUG: No results with first query, trying relaxed search", file=sys.stderr)
         cursor.execute(f'''
         {base_query}
         GROUP BY c.command
@@ -130,15 +155,23 @@ try:
         print("No similar commands found.")
         sys.exit(0)
     
+    print(f"DEBUG: Found {len(results)} results", file=sys.stderr)
+    
     # Print results in a format that can be parsed by the shell script
     for result in results:
-        cmd_id, cmd, timestamp, cwd, exit_code, keywords, similarity = result
+        cmd_id = result[0]
+        cmd = result[1]
+        timestamp = result[2]
+        cwd = result[3]
+        exit_code = result[4]
+        similarity = result[5]
         # Format: ID|TIMESTAMP|CWD|COMMAND|EXIT_CODE|SIMILARITY
-        # Note: We're not including keywords in the output to maintain compatibility
         print(f"{cmd_id}|{timestamp}|{cwd}|{cmd}|{exit_code}|{similarity:.4f}")
         
 except Exception as e:
-    print(f"Error searching for similar commands: {e}")
+    print(f"Error searching for similar commands: {e}", file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
     sys.exit(1)
 finally:
     conn.close() 

@@ -41,7 +41,9 @@ if [[ $SHELL == */zsh ]]; then
     echo 'repty_log() {'
     echo '  local EXIT_CODE=$?'
     echo '  local CMD=$(fc -ln -1 | sed "s/^\s*//")'
-    echo '  "$HOME/.repty/bin/repty" log "$EXIT_CODE" "$CMD"'
+    echo '  if [[ "$CMD" != repty* && -n "$CMD" ]]; then'
+    echo '    "$HOME/.repty/bin/repty" log "$EXIT_CODE" "$CMD"'
+    echo '  fi'
     echo '}'
     echo 'precmd_functions+=(repty_log)'
   } >> "$HOME/.zshrc"
@@ -53,7 +55,9 @@ elif [[ $SHELL == */bash ]]; then
     echo 'repty_log() {'
     echo '  local EXIT_CODE=$?'
     echo '  local CMD=$(HISTTIMEFORMAT="" history 1 | sed "s/^[ 0-9]\+[ ]\+//")'
-    echo '  "$HOME/.repty/bin/repty" log "$EXIT_CODE" "$CMD"'
+    echo '  if [[ "$CMD" != repty* && -n "$CMD" ]]; then'
+    echo '    "$HOME/.repty/bin/repty" log "$EXIT_CODE" "$CMD"'
+    echo '  fi'
     echo '}'
     echo 'PROMPT_COMMAND="repty_log"'
   } >> "$HOME/.bashrc"

@@ -3,6 +3,10 @@ import os
 import sqlite3
 import numpy as np
 
+# Force CPU-only mode for torch to avoid CUDA issues
+os.environ["CUDA_VISIBLE_DEVICES"] = ""
+os.environ["NO_CUDA"] = "1"
+
 try:
     from sentence_transformers import SentenceTransformer
 except ImportError:
@@ -15,7 +19,7 @@ db_path = os.environ.get('REPTY_DB', os.path.expanduser('~/.repty.db'))
 
 # Load a lightweight model
 try:
-    model = SentenceTransformer('all-MiniLM-L6-v2')
+    model = SentenceTransformer('all-MiniLM-L6-v2', device="cpu")
 except Exception as e:
     print(f"Error loading model: {e}")
     sys.exit(1)
@@ -42,12 +46,28 @@ except Exception as e:
     print(f"Error creating table: {e}")
     sys.exit(1)
 
+# Check if keywords column exists in commands table
+try:
+    cursor.execute("PRAGMA table_info(commands)")
+    columns = [col[1] for col in cursor.fetchall()]
+    has_keywords = 'keywords' in columns
+    print(f"Keywords column exists: {has_keywords}")
+except Exception as e:
+    print(f"Error checking table schema: {e}")
+    has_keywords = False
+
 # Get commands without embeddings
 try:
-    cursor.execute('''
-    SELECT id, command, keywords FROM commands 
-    WHERE id NOT IN (SELECT command_id FROM command_embeddings)
-    ''')
+    if has_keywords:
+        cursor.execute('''
+        SELECT id, command, keywords FROM commands 
+        WHERE id NOT IN (SELECT command_id FROM command_embeddings)
+        ''')
+    else:
+        cursor.execute('''
+        SELECT id, command FROM commands 
+        WHERE id NOT IN (SELECT command_id FROM command_embeddings)
+        ''')
     
     commands = cursor.fetchall()
     
@@ -67,11 +87,15 @@ try:
         texts = []
         for cmd in batch:
             command_text = cmd[1]
-            keywords = cmd[2] if cmd[2] else ""
             
-            # Enrich text with keywords if available (repeated to give them more weight)
-            if keywords:
-                enriched_text = f"{command_text} {keywords} {keywords}"
+            if has_keywords and len(cmd) > 2:
+                keywords = cmd[2] if cmd[2] else ""
+                
+                # Enrich text with keywords if available (repeated to give them more weight)
+                if keywords:
+                    enriched_text = f"{command_text} {keywords} {keywords}"
+                else:
+                    enriched_text = command_text
             else:
                 enriched_text = command_text
                 
@@ -94,6 +118,8 @@ try:
     print("Embeddings generated and stored in database")
 except Exception as e:
     print(f"Error generating embeddings: {e}")
+    import traceback
+    traceback.print_exc()
     sys.exit(1)
 finally:
     conn.close() 

@@ -5,18 +5,27 @@ QUERY="$*"
 REPTY_LIB_DIR="$(dirname "$(realpath "$0")")"
 REPTY_EXT_DIR="$REPTY_LIB_DIR/ext"
 NLP_ENABLED_FLAG="$REPTY_EXT_DIR/.nlp_enabled"
+MAX_RESULTS=7  # Limit the number of results displayed
+
+# ANSI color codes
+BLUE='\033[0;34m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+CYAN='\033[0;36m'
+BOLD='\033[1m'
+NC='\033[0m' # No Color
 
 if [ -z "$QUERY" ]; then
-  echo "Usage: repty nlp \"your natural language query\""
-  echo "Examples:"
+  echo -e "${BOLD}Usage:${NC} repty nlp \"your natural language query\""
+  echo -e "\n${BOLD}Examples:${NC}"
   echo "  repty nlp \"git commands I ran yesterday\""
   echo "  repty nlp \"failed commands in the last week\""
   echo "  repty nlp \"commands I ran in the project directory\""
   exit 1
 fi
 
-echo "Analyzing query: '$QUERY'"
-echo "----------------------------------------"
+echo -e "\n${BOLD}${CYAN}Analyzing query:${NC} '$QUERY'"
+echo -e "${CYAN}----------------------------------------${NC}\n"
 
 # Check if advanced NLP is available and enabled
 if [ -f "$NLP_ENABLED_FLAG" ]; then
@@ -25,7 +34,8 @@ if [ -f "$NLP_ENABLED_FLAG" ]; then
   
   if [ "$NEW_COMMANDS" -gt 0 ]; then
     echo "Generating embeddings for $NEW_COMMANDS new commands..."
-    python3 "$REPTY_EXT_DIR/generate_embeddings.py" >/dev/null 2>&1 &
+    # Try to generate embeddings, but don't fail if it doesn't work
+    (python3 "$REPTY_EXT_DIR/generate_embeddings.py" >/dev/null 2>&1 || echo "Warning: Failed to generate embeddings, continuing with keyword search...") &
     PID=$!
     
     # Show a simple spinner while generating embeddings
@@ -40,7 +50,7 @@ if [ -f "$NLP_ENABLED_FLAG" ]; then
   fi
   
   # Try to use semantic search
-  echo "Using semantic search..."
+  echo -e "${BOLD}Using semantic search...${NC}"
   
   # Extract key terms from query to display in output
   query_terms=$(echo "$QUERY" | tr '[:upper:]' '[:lower:]' | tr -cs '[:alpha:]' ' ')
@@ -56,7 +66,7 @@ if [ -f "$NLP_ENABLED_FLAG" ]; then
   
   # If we found key terms, mention them
   if [ -n "$key_terms" ]; then
-    echo "Detected key terms:$key_terms"
+    echo -e "Detected key terms:$key_terms"
   fi
   
   # Perform semantic search
@@ -64,344 +74,349 @@ if [ -f "$NLP_ENABLED_FLAG" ]; then
   
   if [ $? -eq 0 ] && [ -n "$RESULTS" ]; then
     # Format and display results
-    echo "Timestamp            | Command                                             | Directory (Score)"
-    echo "-------------------- | -------------------------------------------------- | -----------------"
+    echo -e "\n${BOLD}${GREEN}Search Results:${NC}"
+    echo -e "${CYAN}----------------------------------------${NC}"
+    echo -e "${BOLD}Timestamp            Command                     Score${NC}"
+    echo -e "${CYAN}-------------------- --------------------------- -------${NC}"
+    
+    count=0
     echo "$RESULTS" | while IFS='|' read -r id timestamp cwd command exit_code similarity; do
-      # Format the output - truncate command if too long
-      CMD=$(echo "$command" | cut -c 1-50)
-      # Display all results with valid similarity score
-      if [[ "$similarity" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
-        printf "%-20s | %-50s | %s (%.2f)\n" "$timestamp" "$CMD" "$cwd" "$similarity"
+      if [ "$count" -lt "$MAX_RESULTS" ]; then
+        # Format the output - truncate command if too long
+        CMD=$(echo "$command" | cut -c 1-25)
+        if [ ${#command} -gt 25 ]; then
+          CMD="${CMD}..."
+        fi
+        
+        # Display all results with valid similarity score
+        if [[ "$similarity" =~ ^[0-9]+(\.[0-9]+)?$ ]]; then
+          printf "${YELLOW}%-20s${NC} %-27s ${GREEN}%.2f${NC}\n" "$timestamp" "$CMD" "$similarity"
+          # Show directory on a second indented line
+          printf "               ${BLUE}%s${NC}\n" "${cwd:0:50}"
+          count=$((count + 1))
+        fi
       fi
     done
     exit 0
   else
-    echo "Semantic search returned no results."
-    echo "Falling back to pattern matching..."
+    echo "Semantic search returned no results or encountered an error."
+    echo -e "${YELLOW}Falling back to keyword matching...${NC}\n"
   fi
 fi
 
 # Handle specific git commands
 if [[ "$QUERY" == *"git"* ]]; then
-  # Check for specific git operations
   if [[ "$QUERY" == *"stage"* || "$QUERY" == *"add"* ]]; then
-    echo "Finding git add/stage commands..."
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+    echo -e "${BOLD}${GREEN}Finding git add/stage commands...${NC}"
+    echo -e "${CYAN}----------------------------------------${NC}"
+    sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 10 10" "$DB" "
     SELECT DISTINCT
-      datetime(timestamp) AS \"Timestamp\",
-      cwd AS \"Directory\",
-      command AS \"Command\",
-      exit_code AS \"Exit Code\"
+      datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+      substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+      substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+      exit_code AS \"${BOLD}Code${NC}\"
     FROM commands
     WHERE command LIKE 'git add%' OR command LIKE 'git stage%'
     GROUP BY command
     ORDER BY timestamp DESC
-    LIMIT 20;"
+    LIMIT $MAX_RESULTS;
+    "
     exit 0
   elif [[ "$QUERY" == *"commit"* ]]; then
-    echo "Finding git commit commands..."
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+    echo -e "${BOLD}${GREEN}Finding git commit commands...${NC}"
+    echo -e "${CYAN}----------------------------------------${NC}"
+    sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
     SELECT DISTINCT
-      datetime(timestamp) AS \"Timestamp\",
-      cwd AS \"Directory\",
-      command AS \"Command\",
-      exit_code AS \"Exit Code\"
+      datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+      substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+      substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+      exit_code AS \"${BOLD}Code${NC}\"
     FROM commands
     WHERE command LIKE 'git commit%'
     GROUP BY command
     ORDER BY timestamp DESC
-    LIMIT 20;"
+    LIMIT $MAX_RESULTS;
+    "
     exit 0
   elif [[ "$QUERY" == *"push"* ]]; then
-    echo "Finding git push commands..."
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+    echo -e "${BOLD}${GREEN}Finding git push commands...${NC}"
+    echo -e "${CYAN}----------------------------------------${NC}"
+    sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
     SELECT DISTINCT
-      datetime(timestamp) AS \"Timestamp\",
-      cwd AS \"Directory\",
-      command AS \"Command\",
-      exit_code AS \"Exit Code\"
+      datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+      substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+      substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+      exit_code AS \"${BOLD}Code${NC}\"
     FROM commands
     WHERE command LIKE 'git push%'
     GROUP BY command
     ORDER BY timestamp DESC
-    LIMIT 20;"
+    LIMIT $MAX_RESULTS;
+    "
     exit 0
   elif [[ "$QUERY" == *"pull"* ]]; then
-    echo "Finding git pull commands..."
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+    echo -e "${BOLD}${GREEN}Finding git pull commands...${NC}"
+    echo -e "${CYAN}----------------------------------------${NC}"
+    sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
     SELECT DISTINCT
-      datetime(timestamp) AS \"Timestamp\",
-      cwd AS \"Directory\",
-      command AS \"Command\",
-      exit_code AS \"Exit Code\"
+      datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+      substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+      substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+      exit_code AS \"${BOLD}Code${NC}\"
     FROM commands
     WHERE command LIKE 'git pull%'
     GROUP BY command
     ORDER BY timestamp DESC
-    LIMIT 20;"
+    LIMIT $MAX_RESULTS;
+    "
     exit 0
   elif [[ "$QUERY" == *"clone"* ]]; then
-    echo "Finding git clone commands..."
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+    echo -e "${BOLD}${GREEN}Finding git clone commands...${NC}"
+    echo -e "${CYAN}----------------------------------------${NC}"
+    sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
     SELECT DISTINCT
-      datetime(timestamp) AS \"Timestamp\",
-      cwd AS \"Directory\",
-      command AS \"Command\",
-      exit_code AS \"Exit Code\"
+      datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+      substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+      substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+      exit_code AS \"${BOLD}Code${NC}\"
     FROM commands
     WHERE command LIKE 'git clone%'
     GROUP BY command
     ORDER BY timestamp DESC
-    LIMIT 20;"
+    LIMIT $MAX_RESULTS;
+    "
     exit 0
   elif [[ "$QUERY" == *"branch"* ]]; then
-    echo "Finding git branch commands..."
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+    echo -e "${BOLD}${GREEN}Finding git branch commands...${NC}"
+    echo -e "${CYAN}----------------------------------------${NC}"
+    sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
     SELECT DISTINCT
-      datetime(timestamp) AS \"Timestamp\",
-      cwd AS \"Directory\",
-      command AS \"Command\",
-      exit_code AS \"Exit Code\"
+      datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+      substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+      substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+      exit_code AS \"${BOLD}Code${NC}\"
     FROM commands
     WHERE command LIKE 'git branch%' OR command LIKE 'git checkout%'
     GROUP BY command
     ORDER BY timestamp DESC
-    LIMIT 20;"
+    LIMIT $MAX_RESULTS;
+    "
     exit 0
   elif [[ "$QUERY" == *"stash"* ]]; then
-    echo "Finding git stash commands..."
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+    echo -e "${BOLD}${GREEN}Finding git stash commands...${NC}"
+    echo -e "${CYAN}----------------------------------------${NC}"
+    sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
     SELECT DISTINCT
-      datetime(timestamp) AS \"Timestamp\",
-      cwd AS \"Directory\",
-      command AS \"Command\",
-      exit_code AS \"Exit Code\"
+      datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+      substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+      substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+      exit_code AS \"${BOLD}Code${NC}\"
     FROM commands
     WHERE command LIKE 'git stash%'
     GROUP BY command
     ORDER BY timestamp DESC
-    LIMIT 20;"
+    LIMIT $MAX_RESULTS;
+    "
     exit 0
   elif [[ "$QUERY" == *"head"* ]]; then
-    echo "Finding git head commands..."
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+    echo -e "${BOLD}${GREEN}Finding git head commands...${NC}"
+    echo -e "${CYAN}----------------------------------------${NC}"
+    sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
     SELECT DISTINCT
-      datetime(timestamp) AS \"Timestamp\",
-      cwd AS \"Directory\",
-      command AS \"Command\",
-      exit_code AS \"Exit Code\"
+      datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+      substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+      substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+      exit_code AS \"${BOLD}Code${NC}\"
     FROM commands
     WHERE command LIKE 'git head%' OR command LIKE 'git show HEAD%' OR command LIKE 'git log HEAD%'
     GROUP BY command
     ORDER BY timestamp DESC
-    LIMIT 20;"
+    LIMIT $MAX_RESULTS;
+    "
     exit 0
   else
-    echo "Finding git commands..."
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+    echo -e "${BOLD}${GREEN}Finding git commands...${NC}"
+    echo -e "${CYAN}----------------------------------------${NC}"
+    sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
     SELECT DISTINCT
-      datetime(timestamp) AS \"Timestamp\",
-      cwd AS \"Directory\",
-      command AS \"Command\",
-      exit_code AS \"Exit Code\"
+      datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+      substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+      substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+      exit_code AS \"${BOLD}Code${NC}\"
     FROM commands
     WHERE command LIKE 'git%'
     GROUP BY command
     ORDER BY timestamp DESC
-    LIMIT 20;"
+    LIMIT $MAX_RESULTS;
+    "
     exit 0
   fi
 fi
 
+# Handle curl commands
+if [[ "$QUERY" == *"curl"* ]]; then
+  echo -e "${BOLD}${GREEN}Finding curl commands...${NC}"
+  echo -e "${CYAN}----------------------------------------${NC}"
+  sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
+  SELECT DISTINCT
+    datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+    substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+    substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+    exit_code AS \"${BOLD}Code${NC}\"
+  FROM commands
+  WHERE command LIKE '%curl%'
+  GROUP BY command
+  ORDER BY timestamp DESC
+  LIMIT $MAX_RESULTS;
+  "
+  exit 0
+fi
+
 # Handle yesterday queries
 if [[ "$QUERY" == *"yesterday"* ]]; then
-  echo "Finding commands from yesterday..."
-  sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+  echo -e "${BOLD}${GREEN}Finding commands from yesterday...${NC}"
+  echo -e "${CYAN}----------------------------------------${NC}"
+  sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
   SELECT DISTINCT
-    datetime(timestamp) AS \"Timestamp\",
-    cwd AS \"Directory\",
-    command AS \"Command\",
-    exit_code AS \"Exit Code\"
+    datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+    substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+    substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+    exit_code AS \"${BOLD}Code${NC}\"
   FROM commands
   WHERE date(timestamp) = date('now', '-1 day')
   GROUP BY command
-  ORDER BY timestamp DESC;"
+  ORDER BY timestamp DESC
+  LIMIT $MAX_RESULTS;
+  "
   exit 0
 fi
 
 # Handle last week queries
 if [[ "$QUERY" == *"last week"* ]]; then
-  echo "Finding commands from the last week..."
-  sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+  echo -e "${BOLD}${GREEN}Finding commands from the last week...${NC}"
+  echo -e "${CYAN}----------------------------------------${NC}"
+  sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
   SELECT DISTINCT
-    datetime(timestamp) AS \"Timestamp\",
-    cwd AS \"Directory\",
-    command AS \"Command\",
-    exit_code AS \"Exit Code\"
+    datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+    substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+    substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+    exit_code AS \"${BOLD}Code${NC}\"
   FROM commands
   WHERE timestamp >= datetime('now', '-7 days')
   GROUP BY command
-  ORDER BY timestamp DESC;"
+  ORDER BY timestamp DESC
+  LIMIT $MAX_RESULTS;
+  "
   exit 0
 fi
 
 # Handle today queries
 if [[ "$QUERY" == *"today"* ]]; then
-  echo "Finding commands from today..."
-  sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+  echo -e "${BOLD}${GREEN}Finding commands from today...${NC}"
+  echo -e "${CYAN}----------------------------------------${NC}"
+  sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
   SELECT DISTINCT
-    datetime(timestamp) AS \"Timestamp\",
-    cwd AS \"Directory\",
-    command AS \"Command\",
-    exit_code AS \"Exit Code\"
+    datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+    substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+    substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+    exit_code AS \"${BOLD}Code${NC}\"
   FROM commands
   WHERE date(timestamp) = date('now')
   GROUP BY command
-  ORDER BY timestamp DESC;"
+  ORDER BY timestamp DESC
+  LIMIT $MAX_RESULTS;
+  "
   exit 0
 fi
 
 # Handle failed/error commands
 if [[ "$QUERY" == *"failed"* || "$QUERY" == *"error"* || "$QUERY" == *"didn't work"* ]]; then
-  echo "Finding failed commands..."
-  sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+  echo -e "${BOLD}${GREEN}Finding failed commands...${NC}"
+  echo -e "${CYAN}----------------------------------------${NC}"
+  sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
   SELECT DISTINCT
-    datetime(timestamp) AS \"Timestamp\",
-    cwd AS \"Directory\",
-    command AS \"Command\",
-    exit_code AS \"Exit Code\"
+    datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+    substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+    substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+    exit_code AS \"${BOLD}Code${NC}\"
   FROM commands
   WHERE exit_code != 0
   GROUP BY command
   ORDER BY timestamp DESC
-  LIMIT 20;"
+  LIMIT $MAX_RESULTS;
+  "
   exit 0
 fi
 
 # Handle npm/node commands
 if [[ "$QUERY" == *"npm"* || "$QUERY" == *"node"* ]]; then
-  echo "Finding npm/node commands..."
-  sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+  echo -e "${BOLD}${GREEN}Finding npm/node commands...${NC}"
+  echo -e "${CYAN}----------------------------------------${NC}"
+  sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
   SELECT DISTINCT
-    datetime(timestamp) AS \"Timestamp\",
-    cwd AS \"Directory\",
-    command AS \"Command\",
-    exit_code AS \"Exit Code\"
+    datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+    substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+    substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+    exit_code AS \"${BOLD}Code${NC}\"
   FROM commands
   WHERE command LIKE 'npm%' OR command LIKE 'node%'
   GROUP BY command
   ORDER BY timestamp DESC
-  LIMIT 20;"
+  LIMIT $MAX_RESULTS;
+  "
   exit 0
 fi
 
 # Handle docker commands
 if [[ "$QUERY" == *"docker"* ]]; then
-  echo "Finding docker commands..."
-  sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+  echo -e "${BOLD}${GREEN}Finding docker commands...${NC}"
+  echo -e "${CYAN}----------------------------------------${NC}"
+  sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
   SELECT DISTINCT
-    datetime(timestamp) AS \"Timestamp\",
-    cwd AS \"Directory\",
-    command AS \"Command\",
-    exit_code AS \"Exit Code\"
+    datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+    substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+    substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+    exit_code AS \"${BOLD}Code${NC}\"
   FROM commands
-  WHERE command LIKE 'docker%'
+  WHERE command LIKE '%docker%'
   GROUP BY command
   ORDER BY timestamp DESC
-  LIMIT 20;"
+  LIMIT $MAX_RESULTS;
+  "
   exit 0
 fi
 
 # Handle most used/frequent/common commands
 if [[ "$QUERY" == *"most used"* || "$QUERY" == *"frequent"* || "$QUERY" == *"common"* ]]; then
-  echo "Finding most frequently used commands..."
-  sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+  echo -e "${BOLD}${GREEN}Finding most frequently used commands...${NC}"
+  echo -e "${CYAN}----------------------------------------${NC}"
+  sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 40 10" "$DB" "
   SELECT
-    command AS \"Command\",
-    COUNT(*) AS \"Count\"
+    substr(command, 1, 40) AS \"${BOLD}Command${NC}\",
+    COUNT(*) AS \"${BOLD}Count${NC}\"
   FROM commands
   GROUP BY command
   ORDER BY Count DESC
-  LIMIT 10;"
+  LIMIT $MAX_RESULTS;
+  "
   exit 0
 fi
 
 # Handle recent/latest/last commands
-if [[ "$QUERY" == *"recent"* || "$QUERY" == *"latest"* || "$QUERY" == *"last"* ]]; then
-  echo "Finding most recent commands..."
-  sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
+if [[ "$QUERY" == *"recent"* || "$QUERY" == *"latest"* || "$QUERY" == *"last"* || "$QUERY" == *"history"* ]]; then
+  echo -e "${BOLD}${GREEN}Finding recent commands...${NC}"
+  echo -e "${CYAN}----------------------------------------${NC}"
+  sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "
   SELECT DISTINCT
-    datetime(timestamp) AS \"Timestamp\",
-    cwd AS \"Directory\",
-    command AS \"Command\",
-    exit_code AS \"Exit Code\"
+    datetime(timestamp) AS \"${BOLD}Timestamp${NC}\",
+    substr(command, 1, 30) AS \"${BOLD}Command${NC}\",
+    substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\",
+    exit_code AS \"${BOLD}Code${NC}\"
   FROM commands
   GROUP BY command
   ORDER BY timestamp DESC
-  LIMIT 10;"
-  exit 0
-fi
-
-# Handle directory/folder/path queries
-if [[ "$QUERY" == *"directory"* || "$QUERY" == *"folder"* || "$QUERY" == *"path"* ]]; then
-  DIR_PATTERN=$(echo "$QUERY" | grep -oP '(?<=directory |folder |path |in )[^ ]+' || echo "")
-  
-  if [ -n "$DIR_PATTERN" ]; then
-    echo "Finding commands in directory containing '$DIR_PATTERN'..."
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
-    SELECT DISTINCT
-      datetime(timestamp) AS \"Timestamp\",
-      cwd AS \"Directory\",
-      command AS \"Command\",
-      exit_code AS \"Exit Code\"
-    FROM commands
-    WHERE cwd LIKE '%$DIR_PATTERN%'
-    GROUP BY command
-    ORDER BY timestamp DESC
-    LIMIT 20;"
-  else
-    echo "Finding commands grouped by directory..."
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
-    SELECT
-      cwd AS \"Directory\",
-      COUNT(*) AS \"Command Count\"
-    FROM commands
-    GROUP BY cwd
-    ORDER BY \"Command Count\" DESC
-    LIMIT 10;"
-  fi
-  exit 0
-fi
-
-# Handle project queries
-if [[ "$QUERY" == *"project"* ]]; then
-  PROJ_PATTERN=$(echo "$QUERY" | grep -oP '(?<=project )[^ ]+' || echo "")
-  
-  if [ -n "$PROJ_PATTERN" ]; then
-    echo "Finding commands in project containing '$PROJ_PATTERN'..."
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
-    SELECT DISTINCT
-      datetime(timestamp) AS \"Timestamp\",
-      cwd AS \"Directory\",
-      command AS \"Command\",
-      exit_code AS \"Exit Code\"
-    FROM commands
-    WHERE git_project LIKE '%$PROJ_PATTERN%'
-    GROUP BY command
-    ORDER BY timestamp DESC
-    LIMIT 20;"
-  else
-    echo "Finding commands grouped by project..."
-    sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "
-    SELECT
-      git_project AS \"Project\",
-      COUNT(*) AS \"Command Count\"
-    FROM commands
-    WHERE git_project != ''
-    GROUP BY git_project
-    ORDER BY \"Command Count\" DESC
-    LIMIT 10;"
-  fi
+  LIMIT $MAX_RESULTS;
+  "
   exit 0
 fi
 
@@ -414,14 +429,22 @@ if [ -z "$KEYWORDS" ]; then
   exit 1
 fi
 
-echo "Searching for: $KEYWORDS"
+echo -e "${BOLD}${GREEN}Searching for: $KEYWORDS${NC}"
+echo -e "${CYAN}----------------------------------------${NC}"
 
-SQL_QUERY="SELECT DISTINCT datetime(timestamp) AS \"Timestamp\", cwd AS \"Directory\", command AS \"Command\", exit_code AS \"Exit Code\" FROM commands WHERE "
+SQL_QUERY="
+SELECT DISTINCT 
+  datetime(timestamp) AS \"${BOLD}Timestamp${NC}\", 
+  substr(command, 1, 30) AS \"${BOLD}Command${NC}\", 
+  substr(cwd, 1, 20) AS \"${BOLD}Directory${NC}\", 
+  exit_code AS \"${BOLD}Code${NC}\" 
+FROM commands 
+WHERE "
 
 for KEYWORD in $KEYWORDS; do
-  SQL_QUERY="$SQL_QUERY command LIKE '%$KEYWORD%' OR "
+  SQL_QUERY="$SQL_QUERY command LIKE '%$KEYWORD%' OR keywords LIKE '%$KEYWORD%' OR "
 done
 
-SQL_QUERY="${SQL_QUERY% OR *} GROUP BY command ORDER BY timestamp DESC LIMIT 20;"
+SQL_QUERY="${SQL_QUERY% OR *} GROUP BY command ORDER BY timestamp DESC LIMIT $MAX_RESULTS;"
 
-sqlite3 -cmd ".mode column" -cmd ".headers on" "$DB" "$SQL_QUERY" 
+sqlite3 -cmd ".mode column" -cmd ".headers on" -cmd ".width 20 30 20 10" "$DB" "$SQL_QUERY" 
