@@ -7,11 +7,82 @@ shift
 # Extract keywords from a command
 extract_keywords() {
   local cmd="$1"
-  # Split command into words and take the first 5 words as keywords
-  local keywords=$(echo "$cmd" | tr -s '[:space:]' ' ' | tr ' ' '\n' | grep -v '^$' | 
-    grep -v -E '^(the|a|an|in|on|at|to|for|with|by|about|--.*)$' | 
-    head -n 5 | tr '\n' ' ' | sed 's/ *$//')
-  echo "$keywords"
+  
+  # Common command-line tools and operations to always include as keywords
+  local important_terms="git docker npm node python pip aws curl wget ssh scp rsync tar zip unzip grep find sed awk head tail cat less more chmod chown mkdir rm cp mv ls ps kill systemctl service apt yum brew kubernetes k8s kubectl terraform ansible vim emacs nano code make gcc clang javac go rust up down start stop build run deploy init pull push clone commit checkout branch stash merge status list config add create remove update restart"
+  
+  # Important multi-word phrases to detect as single keywords
+  local phrases=(
+    "docker compose"
+    "git commit"
+    "git push"
+    "git pull"
+    "git clone"
+    "git checkout"
+    "npm install"
+    "npm run"
+    "pip install"
+    "kubectl get"
+    "kubectl apply"
+  )
+  
+  # Convert to lowercase for matching
+  local cmd_lower=$(echo "$cmd" | tr '[:upper:]' '[:lower:]')
+  
+  # Initialize keywords array
+  local keywords=()
+  
+  # Check for multi-word phrases first
+  for phrase in "${phrases[@]}"; do
+    if [[ "$cmd_lower" == *"$phrase"* ]]; then
+      # Replace spaces with underscores for storage
+      local phrase_key=$(echo "$phrase" | tr ' ' '_')
+      keywords+=("$phrase")
+      # Also add the individual words from the phrase for better matching
+      for word in $phrase; do
+        if [[ ! " ${keywords[*]} " == *" $word "* ]]; then
+          keywords+=("$word")
+        fi
+      done
+    fi
+  done
+  
+  # Check for important single terms
+  for term in $important_terms; do
+    if [[ "$cmd_lower" == *"$term"* ]] && [[ ! " ${keywords[*]} " == *" $term "* ]]; then
+      keywords+=("$term")
+    fi
+  done
+  
+  # Split command into words and add up to 8 significant words that aren't already added
+  # Skip common words, flags, and short words
+  local words=$(echo "$cmd" | tr -cs '[:alnum:]' ' ' | tr '[:upper:]' '[:lower:]')
+  for word in $words; do
+    # Skip if word is already in keywords
+    if [[ " ${keywords[*]} " == *" $word "* ]]; then
+      continue
+    fi
+    
+    # Skip common words, short words, and flag patterns
+    if [[ ${#word} -le 1 || 
+          " the a an in on at to for with by about from this that these those etc of then than " == *" $word "* || 
+          "$word" == -* || 
+          "$word" == --* || 
+          "$word" == "-" || 
+          "$word" == "--" ]]; then
+      continue
+    fi
+    
+    keywords+=("$word")
+    
+    # Limit to 12 keywords total
+    if [[ ${#keywords[@]} -ge 12 ]]; then
+      break
+    fi
+  done
+  
+  # Join keywords with spaces
+  echo "${keywords[*]}"
 }
 
 case "$SUBCOMMAND" in
@@ -32,34 +103,42 @@ case "$SUBCOMMAND" in
     shift  # Shift to remove the exit code parameter
     COMMAND="$*"  # Get all remaining arguments as the command
     
-    if [[ "$COMMAND" == repty* || -z "$COMMAND" ]]; then
+    # Skip logging if the command is empty or starts with repty
+    if [[ -z "$COMMAND" || "$COMMAND" == repty* ]]; then
       exit 0
     fi
     
-    CWD=$(pwd)
-    TIMESTAMP=$(date +"%Y-%m-%d %H:%M:%S")
+    # Extract keywords
+    KEYWORDS=$(extract_keywords "$COMMAND")
     
+    # Get current directory
+    CWD=$(pwd)
+    
+    # Check if we're in a git repo and get the project name
     GIT_PROJECT=""
-    if command -v git &>/dev/null && git rev-parse --is-inside-work-tree &>/dev/null; then
-      GIT_PROJECT=$(git config --get remote.origin.url 2>/dev/null || echo "")
+    if command -v git &>/dev/null; then
+      if git rev-parse --is-inside-work-tree &>/dev/null; then
+        GIT_PROJECT=$(basename "$(git rev-parse --show-toplevel 2>/dev/null)" 2>/dev/null)
+      fi
     fi
     
+    # Get or generate a session ID
     SESSION_ID=${REPTY_SESSION_ID:-$(uuidgen 2>/dev/null || echo "session-$(date +%s)")}
-    export REPTY_SESSION_ID="$SESSION_ID"
     
-    COMMAND_ESC="${COMMAND//\'/\'\'}"
-    CWD_ESC="${CWD//\'/\'\'}"
-    GIT_PROJECT_ESC="${GIT_PROJECT//\'/\'\'}"
-    KEYWORDS=$(extract_keywords "$COMMAND")
-    KEYWORDS_ESC="${KEYWORDS//\'/\'\'}"
-    
-    sqlite3 "$HOME/.repty.db" <<EOF
-INSERT INTO commands (command, timestamp, cwd, exit_code, git_project, session_id, keywords) 
-VALUES ('$COMMAND_ESC', '$TIMESTAMP', '$CWD_ESC', $EXIT_CODE, '$GIT_PROJECT_ESC', '$SESSION_ID', '$KEYWORDS_ESC');
-EOF
+    # Log the command to the database
+    sqlite3 "$HOME/.repty.db" "
+      INSERT INTO commands (command, timestamp, cwd, exit_code, git_project, session_id, keywords)
+      VALUES ('$COMMAND', datetime('now'), '$CWD', $EXIT_CODE, '$GIT_PROJECT', '$SESSION_ID', '$KEYWORDS');
+    "
     ;;
   *)
-    echo "Usage: repty [find <query> | stats | export | nlp <query> | log <exit_code> <command>]"
+    echo "Usage: repty <command> [args]"
+    echo "Commands:"
+    echo "  find <text>       - Find commands containing text"
+    echo "  stats             - Show command statistics"
+    echo "  export [file]     - Export command history to file"
+    echo "  nlp <query>       - Natural language search for commands"
+    echo "  log <code> <cmd>  - Log a command (internal use)"
     exit 1
     ;;
 esac
