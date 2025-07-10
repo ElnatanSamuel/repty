@@ -3,6 +3,8 @@
 REPO_URL="https://github.com/ElnatanSamuel/repty.git"
 INSTALL_DIR="$HOME/.repty"
 BIN_DIR="$INSTALL_DIR/bin"
+LIB_DIR="$INSTALL_DIR/lib"
+EXT_DIR="$LIB_DIR/ext"
 
 echo "Getting Repty..."
 
@@ -20,16 +22,17 @@ if [[ ! -f "$BIN_DIR/repty" ]]; then
   exit 1
 fi
 
+# Create directories
+mkdir -p "$EXT_DIR"
+
+# Make scripts executable
 chmod +x "$BIN_DIR/repty"
-chmod +x "$INSTALL_DIR/lib/export.sh"
-chmod +x "$INSTALL_DIR/lib/stats.sh"
-chmod +x "$INSTALL_DIR/lib/bootstrap.sh"
-chmod +x "$INSTALL_DIR/lib/fuzzy_search.sh"
-chmod +x "$INSTALL_DIR/lib/"*.sh
+chmod +x "$LIB_DIR/"*.sh
+chmod +x "$EXT_DIR/"*.py 2>/dev/null || true
 
 # Initialize the database
 echo "Initializing database..."
-bash "$INSTALL_DIR/lib/bootstrap.sh"
+bash "$LIB_DIR/bootstrap.sh"
 
 if [[ $SHELL == */zsh ]]; then
   echo 'Adding Repty to .zshrc...'

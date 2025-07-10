@@ -4,6 +4,16 @@ REPTY_LIB_DIR="$(dirname "$(realpath "$0")")/../lib"
 SUBCOMMAND=$1
 shift
 
+# Extract keywords from a command
+extract_keywords() {
+  local cmd="$1"
+  # Split command into words and take the first 5 words as keywords
+  local keywords=$(echo "$cmd" | tr -s '[:space:]' ' ' | tr ' ' '\n' | grep -v '^$' | 
+    grep -v -E '^(the|a|an|in|on|at|to|for|with|by|about|--.*)$' | 
+    head -n 5 | tr '\n' ' ' | sed 's/ *$//')
+  echo "$keywords"
+}
+
 case "$SUBCOMMAND" in
   find)
     "$REPTY_LIB_DIR/fuzzy_search.sh" "$@"
@@ -19,7 +29,8 @@ case "$SUBCOMMAND" in
     ;;
   log)
     EXIT_CODE="$1"
-    COMMAND="$2"
+    shift  # Shift to remove the exit code parameter
+    COMMAND="$*"  # Get all remaining arguments as the command
     
     if [[ "$COMMAND" == repty* || -z "$COMMAND" ]]; then
       exit 0
@@ -39,10 +50,12 @@ case "$SUBCOMMAND" in
     COMMAND_ESC="${COMMAND//\'/\'\'}"
     CWD_ESC="${CWD//\'/\'\'}"
     GIT_PROJECT_ESC="${GIT_PROJECT//\'/\'\'}"
+    KEYWORDS=$(extract_keywords "$COMMAND")
+    KEYWORDS_ESC="${KEYWORDS//\'/\'\'}"
     
     sqlite3 "$HOME/.repty.db" <<EOF
-INSERT INTO commands (command, timestamp, cwd, exit_code, git_project, session_id) 
-VALUES ('$COMMAND_ESC', '$TIMESTAMP', '$CWD_ESC', $EXIT_CODE, '$GIT_PROJECT_ESC', '$SESSION_ID');
+INSERT INTO commands (command, timestamp, cwd, exit_code, git_project, session_id, keywords) 
+VALUES ('$COMMAND_ESC', '$TIMESTAMP', '$CWD_ESC', $EXIT_CODE, '$GIT_PROJECT_ESC', '$SESSION_ID', '$KEYWORDS_ESC');
 EOF
     ;;
   *)
