@@ -3,6 +3,8 @@
 REPO_URL="https://github.com/ElnatanSamuel/repty.git"
 INSTALL_DIR="$HOME/.repty"
 BIN_DIR="$INSTALL_DIR/bin"
+LIB_DIR="$INSTALL_DIR/lib"
+EXT_DIR="$LIB_DIR/ext"
 
 echo "Getting Repty..."
 
@@ -20,16 +22,17 @@ if [[ ! -f "$BIN_DIR/repty" ]]; then
   exit 1
 fi
 
+# Create directories
+mkdir -p "$EXT_DIR"
+
+# Make scripts executable
 chmod +x "$BIN_DIR/repty"
-chmod +x "$INSTALL_DIR/lib/export.sh"
-chmod +x "$INSTALL_DIR/lib/stats.sh"
-chmod +x "$INSTALL_DIR/lib/bootstrap.sh"
-chmod +x "$INSTALL_DIR/lib/fuzzy_search.sh"
-chmod +x "$INSTALL_DIR/lib/"*.sh
+chmod +x "$LIB_DIR/"*.sh
+chmod +x "$EXT_DIR/"*.py 2>/dev/null || true
 
 # Initialize the database
 echo "Initializing database..."
-bash "$INSTALL_DIR/lib/bootstrap.sh"
+bash "$LIB_DIR/bootstrap.sh"
 
 if [[ $SHELL == */zsh ]]; then
   echo 'Adding Repty to .zshrc...'
@@ -38,7 +41,9 @@ if [[ $SHELL == */zsh ]]; then
     echo 'repty_log() {'
     echo '  local EXIT_CODE=$?'
     echo '  local CMD=$(fc -ln -1 | sed "s/^\s*//")'
-    echo '  "$HOME/.repty/bin/repty" log "$EXIT_CODE" "$CMD"'
+    echo '  if [[ "$CMD" != repty* && -n "$CMD" ]]; then'
+    echo '    "$HOME/.repty/bin/repty" log "$EXIT_CODE" "$CMD"'
+    echo '  fi'
     echo '}'
     echo 'precmd_functions+=(repty_log)'
   } >> "$HOME/.zshrc"
@@ -50,7 +55,9 @@ elif [[ $SHELL == */bash ]]; then
     echo 'repty_log() {'
     echo '  local EXIT_CODE=$?'
     echo '  local CMD=$(HISTTIMEFORMAT="" history 1 | sed "s/^[ 0-9]\+[ ]\+//")'
-    echo '  "$HOME/.repty/bin/repty" log "$EXIT_CODE" "$CMD"'
+    echo '  if [[ "$CMD" != repty* && -n "$CMD" ]]; then'
+    echo '    "$HOME/.repty/bin/repty" log "$EXIT_CODE" "$CMD"'
+    echo '  fi'
     echo '}'
     echo 'PROMPT_COMMAND="repty_log"'
   } >> "$HOME/.bashrc"
