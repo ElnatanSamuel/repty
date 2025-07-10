@@ -169,9 +169,38 @@ if [ -f "$NLP_ENABLED_FLAG" ]; then
   
   # Store results in a temporary file
   RESULTS_FILE=$(mktemp)
-  python3 "$REPTY_EXT_DIR/semantic_search.py" "$QUERY" 2>/dev/null > "$RESULTS_FILE"
-  
-  if [ $? -eq 0 ] && [ -s "$RESULTS_FILE" ]; then
+
+  # Try multiple semantic search methods in order
+  semantic_search_success=false
+
+  # Try the main semantic search first
+  if [ -f "$REPTY_LIB_DIR/semantic_search.py" ]; then
+    echo -e "${DIM}Trying main semantic search...${NC}" >&2
+    python3 "$REPTY_LIB_DIR/semantic_search.py" "$QUERY" 2>/dev/null > "$RESULTS_FILE"
+    if [ $? -eq 0 ] && [ -s "$RESULTS_FILE" ]; then
+      semantic_search_success=true
+    fi
+  fi
+
+  # If that failed, try extension semantic search
+  if [ "$semantic_search_success" != "true" ] && [ -f "$REPTY_EXT_DIR/semantic_search.py" ]; then
+    echo -e "${DIM}Trying extension semantic search...${NC}" >&2
+    python3 "$REPTY_EXT_DIR/semantic_search.py" "$QUERY" 2>/dev/null > "$RESULTS_FILE"
+    if [ $? -eq 0 ] && [ -s "$RESULTS_FILE" ]; then
+      semantic_search_success=true
+    fi
+  fi
+
+  # If both failed, try the fallback search
+  if [ "$semantic_search_success" != "true" ] && [ -f "$REPTY_EXT_DIR/fallback_search.py" ]; then
+    echo -e "${DIM}Trying fallback search...${NC}" >&2
+    python3 "$REPTY_EXT_DIR/fallback_search.py" "$QUERY" 2>/dev/null > "$RESULTS_FILE"
+    if [ $? -eq 0 ] && [ -s "$RESULTS_FILE" ]; then
+      semantic_search_success=true
+    fi
+  fi
+
+  if [ "$semantic_search_success" == "true" ] && [ -s "$RESULTS_FILE" ]; then
     # Format and display results
     echo -e "\n${BOLD}${GREEN}Search Results:${NC}"
     echo -e "${DIM}Tip: Enter a result number to copy the full command${NC}"
